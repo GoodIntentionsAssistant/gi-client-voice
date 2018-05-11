@@ -1,0 +1,4 @@
+node_modules/
+config.js
+resources/recorded.wav
+resources/result.wav

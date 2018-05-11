@@ -1,0 +1,31 @@
+{
+  "name": "gi-client-voice",
+  "description": "Good Intentions Voice Test Client",
+  "version": "0.0.1",
+  "license": "MIT",
+  "author": {
+    "name": "Darren Moore",
+    "email": "darren.m@firecreekweb.com",
+    "url": "http://goodintentions.firecreekweb.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GoodIntentionsAssistant/gi-client-voice.git"
+  },
+  "licenses": [],
+  "engines": {
+    "~node": "0.10.0"
+  },
+  "devDependencies": {},
+  "scripts": {},
+  "dependencies": {
+    "exec": "^0.2.1",
+    "gi-sdk-nodejs": "0.0.4",
+    "node-record-lpcm16": "^0.3.0",
+    "node-wav-player": "0.0.1",
+    "pico-speaker": "0.0.7",
+    "snowboy": "^1.3.1",
+    "watson-developer-cloud": "^3.4.1"
+  },
+  "keywords": []
+}
