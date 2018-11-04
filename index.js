@@ -4,13 +4,23 @@
  * Experimental!
  *
  */
-const SpeechToTextV1 = require('watson-developer-cloud/speech-to-text/v1');
-const TextToSpeechV1 = require('watson-developer-cloud/text-to-speech/v1');
+const WatsonSpeechToText = require('watson-developer-cloud/speech-to-text/v1');
+const WatsonTextToSpeech = require('watson-developer-cloud/text-to-speech/v1');
+
+const GoogleSpeechToText = require('@google-cloud/speech');
+const GoogleTextToSpeech = require('@google-cloud/text-to-speech');
+
 const GiClient = require('gi-sdk-nodejs');
-const player = require('node-wav-player');
+
+const player_wav = require('node-wav-player');
+const { createAudio } = require('node-mp3-player')
+//const player_mp3 = require('node-mp3-player');
+
 const record = require('node-record-lpcm16');
+
 const Detector = require('snowboy').Detector;
 const Models = require('snowboy').Models;
+
 const fs = require('fs');
 const picoSpeaker = require('pico-speaker');
 const exec = require('exec');
@@ -22,13 +32,13 @@ const models = new Models();
 models.add({
   file: 'resources/ok_alice.pmdl',
   sensitivity: '0.3',
-  hotwords : 'snowboy'
+  hotwords : 'ok_alice'
 });
 
 const detector = new Detector({
   resource: "resources/common.res",
   models: models,
-  audioGain: 1.0,
+  audioGain: 2.0,
   applyFrontend: true
 });
 
@@ -38,6 +48,7 @@ var textToSpeech;
 
 var GiApp;
 
+var hotword_listen = true;  //If to listen for hotword
 var listening = false;
 var listen_timeout = null;
 
@@ -57,6 +68,8 @@ function start() {
   setup_speech_to_text();
   setup_text_to_speech();
   microphone();
+
+  hotword_listen = true;
 }
 
 
@@ -83,7 +96,13 @@ function setup_gi() {
 
   GiApp.on('message', (data) => {
     if(data.type == 'message') {
-      speak(data.messages.join('. '));
+      //Voice attachment?
+      if(data.attachments.voice) {
+        speak(data.attachments.voice[0].text);
+      }
+      else {
+        speak(data.messages.join('. '));
+      }
     }
 
     if(data.attachments.reply) {
@@ -95,20 +114,36 @@ function setup_gi() {
 
 
 function setup_speech_to_text() {
-  speechToText = new SpeechToTextV1({
-    url: "https://stream.watsonplatform.net/speech-to-text/api",
-    username: config.watson.speech_to_text.username,
-    password: config.watson.speech_to_text.password
-  });
+  if(config.options.speech_to_text == 'watson') {
+    speechToText = new WatsonSpeechToText({
+      url: "https://stream.watsonplatform.net/speech-to-text/api",
+      username: config.watson.speech_to_text.username,
+      password: config.watson.speech_to_text.password
+    });
+  }
+  else {
+    speechToText = new GoogleSpeechToText.SpeechClient({
+      projectId: config.google.speech_to_text.project_id,
+      keyFile: './resources/google-cloud-key.json'
+    });
+  }
 }
 
 
 function setup_text_to_speech() {
-  textToSpeech = new TextToSpeechV1({
-    url: 'https://stream.watsonplatform.net/text-to-speech/api/',
-    username: config.watson.text_to_speech.username,
-    password: config.watson.text_to_speech.password
-  });
+  if(config.options.speech_to_text == 'watson') {
+    textToSpeech = new WatsonTextToSpeech({
+      url: 'https://stream.watsonplatform.net/text-to-speech/api/',
+      username: config.watson.text_to_speech.username,
+      password: config.watson.text_to_speech.password
+    });
+  } 
+  else {
+    textToSpeech = new GoogleTextToSpeech.TextToSpeechClient({
+      projectId: config.google.text_to_speech.project_id,
+      keyFile: './resources/google-cloud-key.json'
+    });
+  }
 }
 
 
@@ -128,7 +163,7 @@ function microphone() {
       return;
     }
 
-    if(speaking) {
+    if(!hotword_listen) {
       console.log('Ignoring hotword');
       return;
     }
@@ -167,8 +202,11 @@ function listen() {
   //We are listening
   listening = true;
 
+  //Dont listen for hotword until finished
+  hotword_listen = false;
+
   //Play listening sound
-  player.play({
+  player_wav.play({
     path: 'resources/listening-start.wav',
     sync: true
   }).then(() => {
@@ -194,7 +232,10 @@ function finish() {
   console.log('Finished');
 
   listening = false;
-  player.play({
+
+  hotword_listen = true;
+
+  player_wav.play({
     path: 'resources/listening-end.wav',
   });
 
@@ -204,8 +245,18 @@ function finish() {
 
 
 function transcribe() {
-  console.log('Transcribing...');
+  console.log('Transcribing with '+config.options.speech_to_text+'...');
 
+  if(config.options.speech_to_text == 'watson') {
+    transcribe_watson();
+  }
+  else {
+    transcribe_google();
+  }
+}
+
+
+function transcribe_watson() {
   var params = {
     audio: fs.createReadStream('resources/recorded.wav'),
     content_type: 'audio/wav; rate=44100',
@@ -233,8 +284,47 @@ function transcribe() {
 }
 
 
+function transcribe_google() {
+  //https://github.com/googleapis/nodejs-speech
+
+  var fileName = 'resources/recorded.wav';
+  var file = fs.readFileSync(fileName);
+  var audioBytes = file.toString('base64');
+
+  var audio = {
+    content: audioBytes,
+  };
+  var _config = {
+    encoding: 'LINEAR16',
+    languageCode: 'en-GB',
+  };
+  var request = {
+    audio: audio,
+    config: _config,
+  };
+
+  // Detects speech in the audio file
+  speechToText
+    .recognize(request)
+    .then(data => {
+      const response = data[0];
+      const transcription = response.results
+        .map(result => result.alternatives[0].transcript)
+        .join('\n');
+      console.log(`Transcription: ${transcription}`);
+
+      GiApp.send(config.user.name, 'message', transcription);
+    })
+    .catch(err => {
+      console.error('ERROR:', err);
+    });
+
+
+}
+
+
 function error() {
-  player.play({
+  player_wav.play({
     path: 'resources/error.wav',
   });
 }
@@ -242,7 +332,7 @@ function error() {
 
 function empty() {
   console.log('No voice command caught');
-  player.play({
+  player_wav.play({
     path: 'resources/empty.wav',
   });
 }
@@ -255,13 +345,29 @@ function speak(text) {
 
   speak_queue.push(text);
 
-  _speakWatson(text);
-  //_speakPico(text);
+  _speak_queue(text);
+
+  //When finished speaking
+  hotword_listen = true;
 }
 
 
 
-function _speakWatson(text) {
+function _speak_queue(text) {
+  if(config.options.text_to_speech == 'watson') {
+    speak_watson(text);
+  }
+  else if(config.options.text_to_speech == 'pico') {
+    speak_pico(text);
+  }
+  else {
+    speak_google(text);
+  }
+}
+
+
+
+function speak_watson(text) {
   var params = {
     text: text,
     voice: 'en-GB_KateVoice',
@@ -276,37 +382,67 @@ function _speakWatson(text) {
 
     textToSpeech.repairWavHeader(audio);
     fs.writeFileSync('resources/result.wav', audio);
-
-    __speakResult();
+    __speakResult('resources/result.wav');
   });
-
 }
 
 
-function _speakPico(text) {
+function speak_google(text) {
+  var request = {
+    input: {text: text},
+    voice: {languageCode: 'en-GB', ssmlGender: 'NEUTRAL'},
+    audioConfig: {audioEncoding: 'MP3'},
+  };
+
+  textToSpeech.synthesizeSpeech(request, (err, response) => {
+    if (err) {
+      console.error('ERROR:', err);
+      return;
+    }
+
+    fs.writeFile('resources/result.mp3', response.audioContent, 'binary', err => {
+      if (err) {
+        console.error('ERROR:', err);
+        return;
+      }
+      __speakResult('resources/result.mp3');
+    });
+  });
+}
+
+
+function speak_pico(text) {
   exec('pico2wave -l=en-GB -w=resources/result.wav "'+text+'"', function(err, out, code) {
-    __speakResult();
+    __speakResult('resources/result.wav');
   });
 }
 
 
 
-function __speakResult() {
+function __speakResult(file) {
   //Speaking
   //This stops the hotword listening
   speaking = true;
 
-  player.play({
-    path: 'resources/result.wav',
-    sync: true
-  }).then(() => {
-    speaking = false;
+  if(file.indexOf('mp3') !== -1) {
+    const Audio = createAudio();
+    const myFile = new Audio(file)
+    myFile.volume(1);
+    myFile.play()
+  }
+  else {
+    //Wave file
+    player_wav.play({
+      path: file,
+      sync: true
+    }).then(() => {
+      speaking = false;
+      if(listen_next) {
+        listen();
+      }
+    });
+  }
 
-    if(listen_next) {
-      listen();
-    }
-
-  });
 }
 
 

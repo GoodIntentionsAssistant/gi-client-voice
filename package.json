@@ -19,8 +19,11 @@
   "devDependencies": {},
   "scripts": {},
   "dependencies": {
+    "@google-cloud/speech": "^1.5.0",
+    "@google-cloud/text-to-speech": "^0.1.0",
     "exec": "^0.2.1",
     "gi-sdk-nodejs": "0.0.4",
+    "node-mp3-player": "^1.0.3",
     "node-record-lpcm16": "^0.3.0",
     "node-wav-player": "0.0.1",
     "pico-speaker": "0.0.7",

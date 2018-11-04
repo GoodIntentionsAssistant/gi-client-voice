@@ -1,4 +1,9 @@
 node_modules/
 config.js
 resources/recorded.wav
+resources/recorded.mp3
 resources/result.wav
+resources/result.flac
+resources/result.m4a
+resources/result.mp3
+resources/google-cloud-key.json
